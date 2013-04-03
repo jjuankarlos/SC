@@ -1,0 +1,139 @@
+CREATE OR REPLACE PACKAGE "PCK_LABORALES" is
+ 
+  -- Author  : GUSTAVO.TORRES
+  -- Created : 12/04/2011 09:50:16 a.m.
+  -- Purpose : Paquete de manejo (creación, cálculo y validación) de la cotización de ramos 26 y 27
+ 
+ 
+       -- Buscar salario mínimo
+       FUNCTION FBD_SALARIO_MIN(
+       P_EFECTIVA IN DATE  -- Fecha a la cual se desea el salario mínimo
+  ) RETURN NUMBER;
+ 
+  -- Recupera los mensajes de los errores
+  FUNCTION FBD_MENSAJES(
+       P_CODIGOS IN VARCHAR2 -- Cadena de códigos separados por |
+  ) RETURN VARCHAR2;
+ 
+  -- Transformación de XML nómina a estructura
+  FUNCTION FBD_XML_TYBD_NOMINA(
+       P_CODIGO VARCHAR2   -- Código de una cotización o póliza
+       ,P_NOMIN IN CLOB    -- Datos nómina (XML: <F T="tipo de trabajador" M="monto de la nómina" N="# de trabajadores"/>)
+  ) RETURN TYBD_NOMINA_T;
+ 
+  -- Transformación de XML de coberturas a estructura
+  FUNCTION FBD_XML_TYBD_COBERTURAS(
+       P_CODIGO IN VARCHAR2       -- # de la cotización
+       ,P_COBER IN CLOB                  -- Datos coberturas (XML: <F T="tipo trabajador" C="cobertura" S="suma asegurada" E="extra" />)
+  ) RETURN TYBD_RIESGO_T;
+ 
+       -- Consultar las listas básicas para su llenado
+  PROCEDURE PBD_LISTAS_INICIALES(
+       O_ACTIV OUT SYS_REFCURSOR  -- Lista de actividades / índoles generales
+    ,O_TIPOC OUT SYS_REFCURSOR -- Lista de tipos de contrato
+    ,O_TIPON OUT SYS_REFCURSOR -- Lista de tipos de nómina
+    ,U_USER IN OUT VARCHAR2    -- recibe usuario encriptado y retorna el descriptado
+    ,O_ERROR OUT SYS_REFCURSOR -- Manejo de errores
+  );
+ 
+       -- Validación de la información de la cotización 26 y 27
+  FUNCTION FBD_VALIDAR_COTIZACION(
+    P_COTIZA IN TYBD_EMISION_R    -- Datos de la cotización
+    ,P_NOMINA IN TYBD_NOMINA_T    -- Nómina de la empresa
+    ,P_RIESGO IN TYBD_RIESGO_T    -- Riesgos extras a calcular
+  ) RETURN VARCHAR2;
+ 
+       -- Cálculos de coberturas para ramos 26 y 27
+  FUNCTION FBD_CALCULAR_COBERTURAS(
+    P_COTIZA IN TYBD_EMISION_R    -- Datos de la cotización
+    ,P_NOMINA IN TYBD_NOMINA_T    -- Nómina de la empresa
+    ,P_RIESGO IN TYBD_RIESGO_T    -- Riesgos extras a calcular
+  ) RETURN TYBD_RIESGO_LABORAL_T;
+ 
+  -- Consultar coberturas de cotización
+       PROCEDURE PBD_CONSULTAR_COBERTURAS(
+    P_INFO_COT_POL IN TYBD_EMISION_R--TYBD_COTIZACION_R     -- Datos la cotización
+    ,P_NOMIN IN CLOB                                                      -- Datos nómina (XML: <F T="tipo de trabajador" M="monto de la nómina" N="# de trabajadores"/>)
+    ,P_COBER IN CLOB                                                      -- Datos coberturas (XML: <F T="tipo trabajador" C="cobertura" S="suma asegurada" E="extra" />)
+    ,O_COBER OUT SYS_REFCURSOR                 -- Salida del cálculo de coberturas
+  );
+ 
+-- Impresión de la orden web
+PROCEDURE PBD_IMPRIMIR(
+    P_USUARIO IN VARCHAR2     -- Usuario que se inserta en la orden
+    ,P_CODIGO IN VARCHAR2     -- Cotización o Poliza de donde se extrae la data
+    ,P_ES_POLIZA IN VARCHAR2  -- Bandera para identificar el codigo
+    ,P_SUCURSAL IN INTEGER    -- Sucursal de la cotización
+    ,P_RAMO IN INTEGER        -- Ramo de la cotización
+  );
+ 
+  -- Impresión de la orden web para la consulta
+  PROCEDURE PBD_IMPRIMIR(
+    P_USUARIO IN VARCHAR2  -- Usuario encriptado
+    ,P_CODIGO IN VARCHAR2  -- Cotización o Poliza de donde se extrae la data
+       );
+ 
+  -- Procesa la información para determinar si hay o no autorización
+  FUNCTION FBD_AUTORIZAR(
+       P_USUARIO IN VARCHAR2                          -- Usuario que trata de buscar la autorización
+    ,P_COTIZA IN TYBD_EMISION_R   -- Datos de la cotización
+    ,P_COBERT IN TYBD_RIESGO_T    -- Datos de las coberturas
+    ,P_NOMINA_TOTAL IN NUMBER           -- Total de la nómina
+    ,P_PRIMA_TOTAL IN NUMBER            -- Prima neta total de la cotización
+    ,P_PREVIA IN INTEGER                       -- Si tiene cotización previa o no
+  ) RETURN TYBD_AUTORIZACION_T;
+ 
+       -- Determina si hay autorización o no
+  PROCEDURE PBD_AUTORIZAR(
+       P_CODIGO IN VARCHAR2                           -- # de la cotización
+    ,P_USUARIO IN VARCHAR2              -- Usuario que se conecta para pedir la autorización
+    ,O_AUTORIZACION OUT INTEGER -- Número de autorización
+    ,O_TEXTO OUT VARCHAR2     -- Si hay texto, se generó una autorización pendiente, de lo contrario no ocurrio o es aplicada
+    ,P_PREVIA IN VARCHAR2                      -- Si tiene cotizaciones previas o no
+  );
+ 
+  -- Inserta el comentario de la autorización
+  PROCEDURE PBD_AUTORIZAR_COMENTARIO(
+    P_AUTORIZACION IN INTEGER -- Número de la autorización
+    ,P_COMENTARIO IN VARCHAR2 -- Comentario de la autorización
+  );
+ 
+  -- FUNCION DE APOYO PARA LA FUNCION FBD_XML_TYBD_COBERTURAS
+  FUNCTION FBD_IDENTIFICA_COTIZ_POL(
+       P_CODIGO IN VARCHAR2              -- Código de cotización / póliza
+    ,O_SUCURSAL OUT INTEGER       -- Sucursal
+    ,O_RAMO OUT INTEGER                 -- Ramo
+    ,O_NUMERO OUT INTEGER         -- # de cotización / póliza
+  ) RETURN VARCHAR2 DETERMINISTIC;
+ 
+  -- Elimina en un día particular los datos históricos de una póliza
+  PROCEDURE PBD_ELIMINA_HIST(P_TABLA VARCHAR2 -- NOMBRE DEL HITORICO
+    ,P_SUCURSAL RPAT_ASEGURADOS.RPAS_CASU_CD_SUCURSAL%TYPE  -- codigo de sucursal
+    ,P_RAMO RPAT_ASEGURADOS.RPAS_CARP_CD_RAMO%TYPE                               -- codigo de ramo
+    ,P_NM_POLIZA RPAT_ASEGURADOS.RPAS_CAPO_NU_POLIZA%TYPE   -- codigo de poliza
+    ,P_FE_EFECTIVA RPAT_ASEGURADOS.RPAS_FE_EFECTIVA%TYPE           -- fecha efectiva
+    );
+ 
+  -- Copia los datos de la tabla principal a las tablas históricas
+  PROCEDURE PBD_COPIA_PRINCIPAL_A_HIST(
+       P_TABLA_HIST VARCHAR2                                                                                                                 -- NOMBRE DEL HITORICO
+    ,P_SUCURSAL RPAT_ASEGURADOS.RPAS_CASU_CD_SUCURSAL%TYPE  -- Sucursal de la póliza
+    ,P_RAMO RPAT_ASEGURADOS.RPAS_CARP_CD_RAMO%TYPE                               -- Ramo de la póliza
+    ,P_NM_POLIZA RPAT_ASEGURADOS.RPAS_CAPO_NU_POLIZA%TYPE          -- # de la póliza
+  );
+ 
+  -- Genera la información inicial de las cotizaciones y pólizas
+  PROCEDURE PBD_DATOS_INICIALES(
+    O_ACTIV OUT SYS_REFCURSOR     -- Lista de actividades / índoles generales
+    ,O_TIPOC OUT SYS_REFCURSOR    -- Lista de tipos de contrato
+    ,O_TIPON OUT SYS_REFCURSOR    -- Lista de tipos de nómina
+    ,U_USER IN OUT VARCHAR2       -- Recibe usuario encriptado y retorna el descriptado
+    ,P_COT_POL IN VARCHAR2                     -- Cñodigo de cotización / póliza
+    ,O_COTIZ OUT SYS_REFCURSOR    -- Cotizaciones de referencia
+    ,O_POLIZ OUT SYS_REFCURSOR    -- Pólizas de referencia
+    ,O_RAMOP OUT INTEGER                       -- Ramo de la cotización / póliza
+    ,O_ESVIP OUT VARCHAR2                      -- Determina si el productor es VIP o no
+    ,P_OPERACION IN VARCHAR2            -- Determina la operación si es emisión o modificación
+  );
+END PCK_LABORALES;
+ 
